@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI API Cost Estimator (Live Data)</title>
+    <title>AI API Cost Estimator (Live Data & Caching)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -88,6 +88,9 @@
                         <!-- Quick Filters -->
                         <div class="flex flex-wrap gap-2 pb-1">
                             <button onclick="setProviderFilter('', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium transition-colors border border-blue-200">Tất cả</button>
+                            <button onclick="setProviderFilter('caching', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-amber-100 text-amber-700 font-medium transition-colors border border-amber-300 shadow-sm flex items-center" title="Lọc các mô hình hỗ trợ Prompt Caching (Anthropic, Google, OpenAI, DeepSeek)">
+                                <i data-lucide="zap" class="w-3 h-3 mr-1 text-amber-500"></i> Có Caching
+                            </button>
                             <button onclick="setProviderFilter('groq', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent">Groq</button>
                             <button onclick="setProviderFilter('openai', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent">OpenAI</button>
                             <button onclick="setProviderFilter('anthropic', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent">Anthropic</button>
@@ -105,7 +108,12 @@
                             <i data-lucide="cpu" class="w-24 h-24"></i>
                         </div>
                         <div class="relative z-10">
-                            <div class="text-slate-400 text-xs font-medium mb-1" id="modelInfoProvider">PROVIDER</div>
+                            <div class="flex items-center justify-between mb-1">
+                                <div class="text-slate-400 text-xs font-medium" id="modelInfoProvider">PROVIDER</div>
+                                <span id="cachingBadge" class="hidden text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center">
+                                    <i data-lucide="check-circle" class="w-3 h-3 mr-1"></i> Có Caching
+                                </span>
+                            </div>
                             <h3 class="text-xl font-bold mb-4 text-blue-300" id="modelInfoName">Chưa chọn model</h3>
                             
                             <div class="grid grid-cols-2 gap-4 text-sm">
@@ -113,13 +121,18 @@
                                     <div class="text-slate-400 mb-1 text-xs">Ngữ cảnh (Context)</div>
                                     <div class="font-mono font-medium" id="modelInfoContext">0 tokens</div>
                                 </div>
+                                <div class="col-span-1"></div>
                                 <div>
                                     <div class="text-slate-400 mb-1 text-xs">Giá Input / 1M</div>
                                     <div class="font-mono font-medium text-emerald-400" id="modelInfoInPrice">$0.00</div>
                                 </div>
-                                <div class="col-span-2">
+                                <div>
                                     <div class="text-slate-400 mb-1 text-xs">Giá Output / 1M</div>
                                     <div class="font-mono font-medium text-amber-400" id="modelInfoOutPrice">$0.00</div>
+                                </div>
+                                <div class="col-span-2 hidden bg-slate-800/50 p-2 rounded-lg border border-slate-700" id="modelInfoCacheRow">
+                                    <div class="text-slate-400 mb-1 text-[10px] uppercase tracking-wider flex items-center"><i data-lucide="zap" class="w-3 h-3 mr-1 text-emerald-400"></i> Giá Cache Read / 1M (Giảm <span id="modelInfoCacheDiscount">0</span>%)</div>
+                                    <div class="font-mono font-bold text-emerald-300 text-lg" id="modelInfoCachePrice">$0.00</div>
                                 </div>
                             </div>
                         </div>
@@ -173,6 +186,43 @@
                         <textarea id="queryText" rows="3" placeholder="Bạn muốn hỏi AI điều gì?" 
                             class="w-full px-3 py-2 rounded-lg border border-blue-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-y" oninput="calculateCost()"></textarea>
                     </div>
+
+                    <!-- Prompt Caching Section -->
+                    <div class="bg-amber-50 p-4 rounded-xl border border-amber-200 mt-2">
+                        <div class="flex justify-between items-end mb-1">
+                            <label class="block text-sm font-medium text-amber-800 flex items-center">
+                                <i data-lucide="hard-drive" class="w-4 h-4 mr-1"></i> Tokens đã được Cache (Cache Read)
+                            </label>
+                        </div>
+                        <input type="number" id="cachedTokens" min="0" placeholder="Số lượng Token trong Input đã được lưu Cache (VD: 5000)" 
+                            class="w-full px-3 py-2 rounded-lg border border-amber-300 focus:ring-2 focus:ring-amber-500 outline-none text-sm bg-white" oninput="calculateCost()">
+                        
+                        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mt-2 gap-2">
+                            <p class="text-xs text-amber-700 opacity-80" id="cacheHint">* Giảm giá từ 50% - 90% tùy nhà cung cấp.</p>
+                            <button onclick="document.getElementById('cachePricingTable').classList.toggle('hidden')" class="text-xs text-amber-700 hover:text-amber-900 font-semibold underline flex items-center whitespace-nowrap">
+                                <i data-lucide="table" class="w-3 h-3 mr-1"></i> Xem bảng giá Caching chung
+                            </button>
+                        </div>
+                        
+                        <!-- Bảng giá ẩn -->
+                        <div id="cachePricingTable" class="hidden mt-3 bg-white rounded-lg border border-amber-200 overflow-hidden shadow-sm">
+                            <table class="w-full text-xs text-left">
+                                <thead class="bg-amber-100/70 text-amber-800">
+                                    <tr>
+                                        <th class="px-3 py-2 font-semibold">Nhà cung cấp</th>
+                                        <th class="px-3 py-2 font-semibold text-center">Mức giảm giá</th>
+                                        <th class="px-3 py-2 font-semibold text-right">Tỷ lệ giá Cache Read</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="text-slate-600 divide-y divide-amber-100">
+                                    <tr class="hover:bg-amber-50/50"><td class="px-3 py-2 font-medium">Anthropic (Claude)</td><td class="px-3 py-2 text-emerald-600 font-bold text-center">-90%</td><td class="px-3 py-2 text-right">10% giá Input thường</td></tr>
+                                    <tr class="hover:bg-amber-50/50"><td class="px-3 py-2 font-medium">DeepSeek</td><td class="px-3 py-2 text-emerald-600 font-bold text-center">-90%</td><td class="px-3 py-2 text-right">10% giá Input thường</td></tr>
+                                    <tr class="hover:bg-amber-50/50"><td class="px-3 py-2 font-medium">Google (Gemini)</td><td class="px-3 py-2 text-emerald-600 font-bold text-center">-75%</td><td class="px-3 py-2 text-right">25% giá Input thường</td></tr>
+                                    <tr class="hover:bg-amber-50/50"><td class="px-3 py-2 font-medium">OpenAI (GPT-4o/O1)</td><td class="px-3 py-2 text-emerald-600 font-bold text-center">-50%</td><td class="px-3 py-2 text-right">50% giá Input thường</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="pt-4 border-t border-slate-100">
@@ -219,18 +269,22 @@
 
                 <div class="space-y-4 mb-6">
                     <div class="flex justify-between items-center text-sm">
-                        <span class="text-slate-500">Tổng Input:</span>
+                        <span class="text-slate-500">Tổng Input Tokens:</span>
                         <span id="resTotalInput" class="font-mono font-semibold text-slate-700">0</span>
                     </div>
+                    <div class="flex justify-between items-center text-sm text-amber-600 hidden" id="resCacheRow">
+                        <span>Trong đó đã Cache:</span>
+                        <span id="resCachedTokens" class="font-mono font-medium">0</span>
+                    </div>
                     <div class="flex justify-between items-center text-sm">
-                        <span class="text-slate-500">Tổng Output:</span>
+                        <span class="text-slate-500">Tổng Output Tokens:</span>
                         <span id="resTotalOutput" class="font-mono font-semibold text-slate-700">0</span>
                     </div>
                 </div>
 
                 <div class="space-y-3 mb-6 border-t border-slate-100 pt-4 text-sm">
                     <div class="flex justify-between items-center">
-                        <span class="text-slate-500">Phí Input:</span>
+                        <span class="text-slate-500">Phí Input (Mới + Cache):</span>
                         <span id="costInput" class="font-mono font-medium text-slate-700">$0.000000</span>
                     </div>
                     <div class="flex justify-between items-center">
@@ -268,6 +322,17 @@
         let selectedModelPrice = { in: 0, out: 0 };
         let currentProviderFilter = '';
 
+        // Danh sách các nhà cung cấp hỗ trợ Prompt Caching uy tín
+        const cachingProviders = ['anthropic', 'google', 'openai', 'deepseek'];
+        
+        // Tỷ lệ giá Cache Read so với Input thông thường (Dự kiến)
+        const cacheReadRatios = {
+            'ANTHROPIC': 0.10, // Giảm 90%
+            'GOOGLE': 0.25,    // Giảm 75%
+            'OPENAI': 0.50,    // Giảm 50%
+            'DEEPSEEK': 0.10   // Giảm 90%
+        };
+
         // Xử lý upload file RAG
         function handleFileUpload(event) {
             const file = event.target.files[0];
@@ -291,12 +356,9 @@
         const mediaTokens = { image: 258, videoPerSec: 263, audioPerSec: 32 };
 
         // Hàm tính Token từ text (Thuật toán ước lượng nhanh)
-        // Trung bình 1 từ (word) khoảng 1.3 đến 1.5 tokens đối với Tiếng Việt/Anh
         function estimateTokens(text) {
             if (!text || text.trim() === '') return 0;
-            // Tách từ bằng khoảng trắng và xuống dòng
             const words = text.trim().split(/\s+/).length;
-            // Trả về số nguyên
             return Math.ceil(words * 1.5);
         }
 
@@ -307,17 +369,13 @@
                 const res = await fetch('https://openrouter.ai/api/v1/models');
                 const data = await res.json();
                 
-                // Lọc bỏ những model lỗi giá (-1)
                 allModels = data.data.filter(m => m.pricing && parseFloat(m.pricing.prompt) >= 0);
-                
-                // Sắp xếp theo tên tổ chức/provider
                 allModels.sort((a, b) => a.id.localeCompare(b.id));
 
                 document.getElementById('modelCountBadge').innerText = `${allModels.length} Models`;
                 renderModelList(allModels);
 
-                // Mặc định chọn GPT-4o nếu có
-                const defaultModel = allModels.find(m => m.id.includes('gpt-4o')) || allModels[0];
+                const defaultModel = allModels.find(m => m.id.includes('claude-3-5-sonnet')) || allModels[0];
                 if(defaultModel) {
                     select.value = defaultModel.id;
                     updateModelInfo();
@@ -339,13 +397,11 @@
                 opt.value = model.id;
                 opt.title = model.name;
                 
-                // Trích xuất tên Provider từ ID (VD: openai/gpt-4 -> openai)
                 const provider = model.id.split('/')[0].toUpperCase();
                 opt.textContent = `[${provider}] ${model.name}`;
                 select.appendChild(opt);
             });
             
-            // Tự động chọn option đầu tiên nếu danh sách không rỗng
             if(models.length > 0 && !models.find(m => m.id === select.value)) {
                 select.value = models[0].id;
                 updateModelInfo();
@@ -353,14 +409,20 @@
         }
 
         // Chọn lọc nhà cung cấp (Quick Filters)
-        function setProviderFilter(provider, btnElement) {
-            currentProviderFilter = provider.toLowerCase();
+        function setProviderFilter(filterType, btnElement) {
+            currentProviderFilter = filterType.toLowerCase();
             
-            // Cập nhật giao diện nút bấm
             document.querySelectorAll('.provider-btn').forEach(btn => {
-                btn.className = "provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent";
+                btn.classList.remove('bg-blue-100', 'text-blue-700', 'border-blue-200', 'bg-amber-100', 'text-amber-700', 'border-amber-300');
+                btn.classList.add('bg-slate-100', 'text-slate-600', 'border-transparent');
             });
-            btnElement.className = "provider-btn text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium transition-colors border border-blue-200";
+            
+            btnElement.classList.remove('bg-slate-100', 'text-slate-600', 'border-transparent');
+            if(filterType === 'caching') {
+                btnElement.classList.add('bg-amber-100', 'text-amber-700', 'border-amber-300');
+            } else {
+                btnElement.classList.add('bg-blue-100', 'text-blue-700', 'border-blue-200');
+            }
             
             filterModels();
         }
@@ -371,7 +433,17 @@
             
             const filtered = allModels.filter(m => {
                 const matchKeyword = m.name.toLowerCase().includes(keyword) || m.id.toLowerCase().includes(keyword);
-                const matchProvider = currentProviderFilter === '' || m.id.toLowerCase().startsWith(currentProviderFilter + '/');
+                let matchProvider = false;
+                
+                if (currentProviderFilter === '') {
+                    matchProvider = true;
+                } else if (currentProviderFilter === 'caching') {
+                    // Lọc các model thuộc các provider có hỗ trợ caching
+                    matchProvider = cachingProviders.some(p => m.id.toLowerCase().startsWith(p + '/'));
+                } else {
+                    matchProvider = m.id.toLowerCase().startsWith(currentProviderFilter + '/');
+                }
+                
                 return matchKeyword && matchProvider;
             });
             
@@ -384,7 +456,6 @@
             const model = allModels.find(m => m.id === selectedId);
             
             if(model) {
-                // Giá trả về là per token -> nhân 1 Triệu để hiển thị
                 const priceIn1M = parseFloat(model.pricing.prompt) * 1000000;
                 const priceOut1M = parseFloat(model.pricing.completion) * 1000000;
                 
@@ -401,6 +472,30 @@
                 document.getElementById('modelInfoInPrice').innerText = '$' + priceIn1M.toFixed(2);
                 document.getElementById('modelInfoOutPrice').innerText = '$' + priceOut1M.toFixed(2);
                 
+                // Hiển thị badge Caching
+                const isCachingSupported = cachingProviders.includes(provider.toLowerCase());
+                const badge = document.getElementById('cachingBadge');
+                const cacheHint = document.getElementById('cacheHint');
+                const cacheRowInfo = document.getElementById('modelInfoCacheRow');
+                
+                if (isCachingSupported) {
+                    badge.classList.remove('hidden');
+                    cacheRowInfo.classList.remove('hidden');
+                    
+                    const ratio = cacheReadRatios[provider] !== undefined ? cacheReadRatios[provider] : 1;
+                    const discount = (1 - ratio) * 100;
+                    const cachePriceIn1M = priceIn1M * ratio;
+                    
+                    document.getElementById('modelInfoCacheDiscount').innerText = discount;
+                    document.getElementById('modelInfoCachePrice').innerText = '$' + cachePriceIn1M.toFixed(4);
+                    
+                    cacheHint.innerText = `* Nhà cung cấp ${provider} giảm ~${discount}% chi phí cho Token được Cache.`;
+                } else {
+                    badge.classList.add('hidden');
+                    cacheRowInfo.classList.add('hidden');
+                    cacheHint.innerText = `* Cảnh báo: Provider ${provider} có thể không hỗ trợ mức giá ưu đãi cho Cache.`;
+                }
+                
                 calculateCost();
             }
         }
@@ -412,30 +507,49 @@
 
         // Tính toán chi phí cuối cùng
         function calculateCost() {
-            // Lấy Text Input và tính Tokens
             const sysT = estimateTokens(document.getElementById('sysText').value);
             const historyT = estimateTokens(document.getElementById('historyText').value);
             const queryT = estimateTokens(document.getElementById('queryText').value);
 
-            // Cập nhật Label hiển thị token cho từng ô
             document.getElementById('lblSysTokens').innerText = `≈ ${sysT.toLocaleString()} tokens`;
             document.getElementById('lblHistoryTokens').innerText = `≈ ${historyT.toLocaleString()} tokens`;
             document.getElementById('lblQueryTokens').innerText = `≈ ${queryT.toLocaleString()} tokens`;
 
-            // Lấy Media
             const imgT = getNumVal('images') * mediaTokens.image;
             const vidT = getNumVal('videoSecs') * mediaTokens.videoPerSec;
             const audT = getNumVal('audioSecs') * mediaTokens.audioPerSec;
 
-            const totalInputTokens = sysT + historyT + queryT + imgT + vidT + audT;
+            let totalInputTokens = sysT + historyT + queryT + imgT + vidT + audT;
+            let cachedTokens = getNumVal('cachedTokens');
+
+            // Không thể cache nhiều hơn số token input hiện có
+            if (cachedTokens > totalInputTokens) {
+                cachedTokens = totalInputTokens;
+            }
+
+            const newTokens = totalInputTokens - cachedTokens;
             const totalOutputTokens = getNumVal('outTokens');
 
             // Hiển thị UI Tokens
             document.getElementById('resTotalInput').innerText = totalInputTokens.toLocaleString();
             document.getElementById('resTotalOutput').innerText = totalOutputTokens.toLocaleString();
+            
+            const cacheRow = document.getElementById('resCacheRow');
+            if (cachedTokens > 0) {
+                cacheRow.classList.remove('hidden');
+                document.getElementById('resCachedTokens').innerText = cachedTokens.toLocaleString();
+            } else {
+                cacheRow.classList.add('hidden');
+            }
 
-            // Tính tiền = Số token * Giá 1 token
-            const costIn = totalInputTokens * selectedModelPrice.in;
+            // Tính tiền Prompt Caching
+            const provider = document.getElementById('modelInfoProvider').innerText;
+            const cacheRatio = cacheReadRatios[provider] !== undefined ? cacheReadRatios[provider] : 1; 
+
+            const costInNew = newTokens * selectedModelPrice.in;
+            const costInCached = cachedTokens * (selectedModelPrice.in * cacheRatio);
+            
+            const costIn = costInNew + costInCached;
             const costOut = totalOutputTokens * selectedModelPrice.out;
             const totalCost = costIn + costOut;
 
