@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI API Cost Estimator (Live Data)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* Tùy chỉnh thanh cuộn */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Custom listbox */
+        select[size] {
+            padding: 0.5rem;
+        }
+        select[size] option {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 2px;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        select[size] option:checked {
+            background-color: #eff6ff; /* blue-50 */
+            color: #1d4ed8; /* blue-700 */
+            font-weight: 600;
+            border-color: #bfdbfe;
+        }
+        select[size] option:hover:not(:checked) {
+            background-color: #f8fafc;
+        }
+    </style>
+</head>
+<body class="text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-slate-200 py-4 px-6 sticky top-0 z-20">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-2 text-blue-600">
+                <i data-lucide="zap" class="w-6 h-6"></i>
+                <h1 class="text-xl font-bold tracking-tight">Universal AI Cost Estimator</h1>
+            </div>
+            <div class="text-sm text-slate-500 font-medium flex items-center">
+                <span class="relative flex h-3 w-3 mr-2">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+                Live Pricing API
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-6xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Cột Nhập Liệu -->
+        <div class="lg:col-span-8 space-y-6">
+            
+            <!-- Chọn Model (Real-time) -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center">
+                        <i data-lucide="database" class="w-5 h-5 mr-2 text-slate-500"></i>
+                        1. Chọn Mô hình (Hơn 300+ Models)
+                    </h2>
+                    <span id="modelCountBadge" class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-semibold">Đang tải...</span>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Khung Search & Select -->
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+                            <input type="text" id="modelSearch" placeholder="Tìm model (VD: gpt-4, claude, gemini)..." 
+                                class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+                                onkeyup="filterModels()">
+                        </div>
+                        
+                        <!-- Quick Filters -->
+                        <div class="flex flex-wrap gap-2 pb-1">
+                            <button onclick="setProviderFilter('', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium transition-colors border border-blue-200">Tất cả</button>
+                            <button onclick="setProviderFilter('groq', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent">Groq</button>
+                            <button onclick="setProviderFilter('openai', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent">OpenAI</button>
+                            <button onclick="setProviderFilter('anthropic', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent">Anthropic</button>
+                            <button onclick="setProviderFilter('google', this)" class="provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent">Google</button>
+                        </div>
+
+                        <select id="modelSelect" size="5" class="w-full border border-slate-200 rounded-lg outline-none text-sm bg-slate-50 shadow-inner" onchange="updateModelInfo()">
+                            <option>Đang kết nối OpenRouter API...</option>
+                        </select>
+                    </div>
+
+                    <!-- Khung Hiển Thị Thông Tin Model -->
+                    <div class="bg-slate-900 rounded-xl p-5 text-white flex flex-col justify-center relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-4 opacity-10">
+                            <i data-lucide="cpu" class="w-24 h-24"></i>
+                        </div>
+                        <div class="relative z-10">
+                            <div class="text-slate-400 text-xs font-medium mb-1" id="modelInfoProvider">PROVIDER</div>
+                            <h3 class="text-xl font-bold mb-4 text-blue-300" id="modelInfoName">Chưa chọn model</h3>
+                            
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <div class="text-slate-400 mb-1 text-xs">Ngữ cảnh (Context)</div>
+                                    <div class="font-mono font-medium" id="modelInfoContext">0 tokens</div>
+                                </div>
+                                <div>
+                                    <div class="text-slate-400 mb-1 text-xs">Giá Input / 1M</div>
+                                    <div class="font-mono font-medium text-emerald-400" id="modelInfoInPrice">$0.00</div>
+                                </div>
+                                <div class="col-span-2">
+                                    <div class="text-slate-400 mb-1 text-xs">Giá Output / 1M</div>
+                                    <div class="font-mono font-medium text-amber-400" id="modelInfoOutPrice">$0.00</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Nhập Input Tokens -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                <h2 class="text-lg font-semibold flex items-center">
+                    <i data-lucide="message-square-plus" class="w-5 h-5 mr-2 text-slate-500"></i>
+                    2. Dữ liệu Đầu vào (Input)
+                </h2>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">System Prompt / RAG Docs</label>
+                        <input type="number" id="sysTokens" min="0" placeholder="VD: 5000" class="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" oninput="calculateCost()">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Chat History</label>
+                        <input type="number" id="historyTokens" min="0" placeholder="VD: 2000" class="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" oninput="calculateCost()">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">User Query hiện tại</label>
+                        <input type="number" id="queryTokens" min="0" placeholder="VD: 150" class="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" oninput="calculateCost()">
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">Ước tính Media (Dành cho Multimodal)</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Hình ảnh</label>
+                            <input type="number" id="images" min="0" placeholder="0 ảnh" class="w-full px-3 py-1.5 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" oninput="calculateCost()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Video (Giây)</label>
+                            <input type="number" id="videoSecs" min="0" placeholder="0 giây" class="w-full px-3 py-1.5 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" oninput="calculateCost()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-600 mb-1">Audio (Giây)</label>
+                            <input type="number" id="audioSecs" min="0" placeholder="0 giây" class="w-full px-3 py-1.5 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" oninput="calculateCost()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Nhập Output Tokens -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <i data-lucide="sparkles" class="w-5 h-5 mr-2 text-slate-500"></i>
+                    3. Dữ liệu Đầu ra (Output)
+                </h2>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Dự kiến AI trả lời (Tokens)</label>
+                    <input type="number" id="outTokens" min="0" placeholder="VD: 800" class="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none" oninput="calculateCost()">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Cột Kết Quả -->
+        <div class="lg:col-span-4">
+            <div class="bg-white p-6 rounded-2xl shadow-xl border border-slate-200 sticky top-24">
+                <h2 class="text-xl font-bold mb-6 flex items-center border-b border-slate-100 pb-4 text-slate-800">
+                    <i data-lucide="calculator" class="w-5 h-5 mr-2 text-blue-600"></i>
+                    Tổng Chi Phí
+                </h2>
+
+                <div class="space-y-4 mb-6">
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-slate-500">Tổng Input:</span>
+                        <span id="resTotalInput" class="font-mono font-semibold text-slate-700">0</span>
+                    </div>
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-slate-500">Tổng Output:</span>
+                        <span id="resTotalOutput" class="font-mono font-semibold text-slate-700">0</span>
+                    </div>
+                </div>
+
+                <div class="space-y-3 mb-6 border-t border-slate-100 pt-4 text-sm">
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-500">Phí Input:</span>
+                        <span id="costInput" class="font-mono font-medium text-slate-700">$0.000000</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-500">Phí Output:</span>
+                        <span id="costOutput" class="font-mono font-medium text-slate-700">$0.000000</span>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 border border-blue-100 rounded-xl p-5 shadow-inner">
+                    <div class="text-blue-600 text-sm font-semibold mb-1">Tổng cộng (1 Request):</div>
+                    <div class="text-3xl font-bold font-mono text-blue-700 tracking-tight" id="costTotal">
+                        $0.000000
+                    </div>
+                    <div class="text-sm text-slate-500 mt-2 font-medium">~ <span id="costVND">0</span> VNĐ</div>
+                </div>
+                
+                <div class="mt-6 text-xs text-slate-400 text-center space-y-1">
+                    <p>Dữ liệu giá được fetch trực tiếp từ <a href="https://openrouter.ai/" target="_blank" class="text-blue-500 hover:underline">OpenRouter API</a>.</p>
+                    <p>Tỷ giá ước tính: 1 USD = 25,000 VNĐ</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // Khởi tạo icons
+        lucide.createIcons();
+
+        let allModels = [];
+        let selectedModelPrice = { in: 0, out: 0 };
+        let currentProviderFilter = '';
+        const USD_TO_VND = 25000;
+
+        // Ước lượng Token cho Media (Tham khảo chuẩn chung)
+        const mediaTokens = { image: 258, videoPerSec: 263, audioPerSec: 32 };
+
+        // 1. Lấy dữ liệu Models từ OpenRouter API
+        async function fetchLiveModels() {
+            const select = document.getElementById('modelSelect');
+            try {
+                const res = await fetch('https://openrouter.ai/api/v1/models');
+                const data = await res.json();
+                
+                // Lọc bỏ những model lỗi giá (-1)
+                allModels = data.data.filter(m => m.pricing && parseFloat(m.pricing.prompt) >= 0);
+                
+                // Sắp xếp theo tên tổ chức/provider
+                allModels.sort((a, b) => a.id.localeCompare(b.id));
+
+                document.getElementById('modelCountBadge').innerText = `${allModels.length} Models`;
+                renderModelList(allModels);
+
+                // Mặc định chọn GPT-4o nếu có
+                const defaultModel = allModels.find(m => m.id.includes('gpt-4o')) || allModels[0];
+                if(defaultModel) {
+                    select.value = defaultModel.id;
+                    updateModelInfo();
+                }
+
+            } catch (err) {
+                console.error("Lỗi fetch OpenRouter API:", err);
+                select.innerHTML = '<option value="">Lỗi kết nối API. Vui lòng tải lại trang.</option>';
+            }
+        }
+
+        // Render danh sách options vào thẻ Select
+        function renderModelList(models) {
+            const select = document.getElementById('modelSelect');
+            select.innerHTML = '';
+            
+            models.forEach(model => {
+                const opt = document.createElement('option');
+                opt.value = model.id;
+                opt.title = model.name;
+                
+                // Trích xuất tên Provider từ ID (VD: openai/gpt-4 -> openai)
+                const provider = model.id.split('/')[0].toUpperCase();
+                opt.textContent = `[${provider}] ${model.name}`;
+                select.appendChild(opt);
+            });
+            
+            // Tự động chọn option đầu tiên nếu danh sách không rỗng
+            if(models.length > 0 && !models.find(m => m.id === select.value)) {
+                select.value = models[0].id;
+                updateModelInfo();
+            }
+        }
+
+        // Chọn lọc nhà cung cấp (Quick Filters)
+        function setProviderFilter(provider, btnElement) {
+            currentProviderFilter = provider.toLowerCase();
+            
+            // Cập nhật giao diện nút bấm
+            document.querySelectorAll('.provider-btn').forEach(btn => {
+                btn.className = "provider-btn text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors border border-transparent";
+            });
+            btnElement.className = "provider-btn text-xs px-3 py-1 rounded-full bg-blue-100 text-blue-700 font-medium transition-colors border border-blue-200";
+            
+            filterModels();
+        }
+
+        // Chức năng tìm kiếm và lọc
+        function filterModels() {
+            const keyword = document.getElementById('modelSearch').value.toLowerCase();
+            
+            const filtered = allModels.filter(m => {
+                const matchKeyword = m.name.toLowerCase().includes(keyword) || m.id.toLowerCase().includes(keyword);
+                const matchProvider = currentProviderFilter === '' || m.id.toLowerCase().startsWith(currentProviderFilter + '/');
+                return matchKeyword && matchProvider;
+            });
+            
+            renderModelList(filtered);
+        }
+
+        // Cập nhật thông tin UI khi chọn Model
+        function updateModelInfo() {
+            const selectedId = document.getElementById('modelSelect').value;
+            const model = allModels.find(m => m.id === selectedId);
+            
+            if(model) {
+                // Giá trả về là per token -> nhân 1 Triệu để hiển thị
+                const priceIn1M = parseFloat(model.pricing.prompt) * 1000000;
+                const priceOut1M = parseFloat(model.pricing.completion) * 1000000;
+                
+                selectedModelPrice = {
+                    in: parseFloat(model.pricing.prompt),
+                    out: parseFloat(model.pricing.completion)
+                };
+
+                const provider = model.id.split('/')[0].toUpperCase();
+
+                document.getElementById('modelInfoProvider').innerText = provider;
+                document.getElementById('modelInfoName').innerText = model.name;
+                document.getElementById('modelInfoContext').innerText = (model.context_length || 0).toLocaleString() + ' tokens';
+                document.getElementById('modelInfoInPrice').innerText = '$' + priceIn1M.toFixed(2);
+                document.getElementById('modelInfoOutPrice').innerText = '$' + priceOut1M.toFixed(2);
+                
+                calculateCost();
+            }
+        }
+
+        // Lấy value an toàn từ input
+        function getVal(id) {
+            return parseFloat(document.getElementById(id).value) || 0;
+        }
+
+        // Tính toán chi phí cuối cùng
+        function calculateCost() {
+            // Lấy Input text
+            const sysT = getVal('sysTokens');
+            const historyT = getVal('historyTokens');
+            const queryT = getVal('queryTokens');
+
+            // Lấy Media
+            const imgT = getVal('images') * mediaTokens.image;
+            const vidT = getVal('videoSecs') * mediaTokens.videoPerSec;
+            const audT = getVal('audioSecs') * mediaTokens.audioPerSec;
+
+            const totalInputTokens = sysT + historyT + queryT + imgT + vidT + audT;
+            const totalOutputTokens = getVal('outTokens');
+
+            // Hiển thị UI Tokens
+            document.getElementById('resTotalInput').innerText = totalInputTokens.toLocaleString();
+            document.getElementById('resTotalOutput').innerText = totalOutputTokens.toLocaleString();
+
+            // Tính tiền = Số token * Giá 1 token
+            const costIn = totalInputTokens * selectedModelPrice.in;
+            const costOut = totalOutputTokens * selectedModelPrice.out;
+            const totalCost = costIn + costOut;
+
+            // Render
+            document.getElementById('costInput').innerText = "$" + costIn.toFixed(6);
+            document.getElementById('costOutput').innerText = "$" + costOut.toFixed(6);
+            document.getElementById('costTotal').innerText = "$" + totalCost.toFixed(6);
+            
+            const vndCost = (totalCost * USD_TO_VND);
+            document.getElementById('costVND').innerText = vndCost > 0 && vndCost < 1 ? "< 1" : Math.round(vndCost).toLocaleString('vi-VN');
+        }
+
+        // Khởi động khi tải trang
+        window.onload = () => {
+            fetchLiveModels();
+        };
+    </script>
+</body>
+</html>
